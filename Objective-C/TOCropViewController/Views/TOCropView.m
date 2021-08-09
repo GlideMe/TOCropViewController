@@ -1402,15 +1402,17 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
     if (!self.initialSetupPerformed) {
         return;
     }
+
+    CGSize imageSize = self.imageSize;
+    CGRect boundsFrame = self.contentBounds;
+    CGRect cropBoxFrame = self.cropBoxFrame;
+    CGPoint offset = self.scrollView.contentOffset;
+    CGSize aspectRatio = aspectRatio;
     
     // Passing in an empty size will revert back to the image aspect ratio
     if (aspectRatio.width < FLT_EPSILON && aspectRatio.height < FLT_EPSILON) {
         aspectRatio = (CGSize){self.imageSize.width, self.imageSize.height};
     }
-
-    CGRect boundsFrame = self.contentBounds;
-    CGRect cropBoxFrame = self.cropBoxFrame;
-    CGPoint offset = self.scrollView.contentOffset;
     
     BOOL cropBoxIsPortrait = NO;
     if ((NSInteger)aspectRatio.width == 1 && (NSInteger)aspectRatio.height == 1)
@@ -1419,20 +1421,25 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
         cropBoxIsPortrait = aspectRatio.width < aspectRatio.height;
 
     BOOL zoomOut = NO;
+    
+    // Added calculated scale to preserve zoom on zooming out instead of using scrollView.minimumZoomScale
+    CGFloat zoomOutScale = [CGFloat zero];
+    
     if (cropBoxIsPortrait) {
         CGFloat newWidth = floorf(cropBoxFrame.size.height * (aspectRatio.width/aspectRatio.height));
         CGFloat delta = cropBoxFrame.size.width - newWidth;
         cropBoxFrame.size.width = newWidth;
         offset.x += (delta * 0.5f);
 
-        if (delta < FLT_EPSILON) {
-            cropBoxFrame.origin.x = self.contentBounds.origin.x; //set to 0 to avoid accidental clamping by the crop frame sanitizer
-        }
-
         // If the aspect ratio causes the new width to extend
         // beyond the content width, we'll need to zoom the image out
         CGFloat boundsWidth = CGRectGetWidth(boundsFrame);
         if (newWidth > boundsWidth) {
+            
+            if (delta < FLT_EPSILON) {
+                cropBoxFrame.origin.x = self.contentBounds.origin.x; //set to 0 to avoid accidental clamping by the crop frame sanitizer
+            }
+            
             CGFloat scale = boundsWidth / newWidth;
 
             // Scale the new height
@@ -1445,6 +1452,7 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
 
             // Clamp the width to the bounds width
             cropBoxFrame.size.width = boundsWidth;
+            zoomOutScale = self.scrollView.zoomScale * scale;
             zoomOut = YES;
         }
     }
@@ -1454,14 +1462,14 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
         cropBoxFrame.size.height = newHeight;
         offset.y += (delta * 0.5f);
 
-        if (delta < FLT_EPSILON) {
-            cropBoxFrame.origin.y = self.contentBounds.origin.y;
-        }
-
         // If the aspect ratio causes the new height to extend
         // beyond the content width, we'll need to zoom the image out
         CGFloat boundsHeight = CGRectGetHeight(boundsFrame);
         if (newHeight > boundsHeight) {
+            if (delta < FLT_EPSILON) {
+                cropBoxFrame.origin.y = self.contentBounds.origin.y;
+            }
+
             CGFloat scale = boundsHeight / newHeight;
 
             // Scale the new width
@@ -1474,6 +1482,7 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
 
             // Clamp the width to the bounds height
             cropBoxFrame.size.height = boundsHeight;
+            zoomOutScale = self.scrollView.zoomScale * scale;
             zoomOut = YES;
         }
     }
@@ -1482,29 +1491,34 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
     self.cropBoxLastEditedAngle = self.angle;
     
     void (^translateBlock)(void) = ^{
+        CGFloat preservedZoomScale = self.scrollView.zoomScale; // Added preserving of zoom scale to prevent zoom in every set aspect ratio
         self.scrollView.contentOffset = offset;
         self.cropBoxFrame = cropBoxFrame;
         
         if (zoomOut) {
-            self.scrollView.zoomScale = self.scrollView.minimumZoomScale;
+            self.scrollView.zoomScale = zoomOutScale;
         }
-            
+        
         [self moveCroppedContentToCenterAnimated:NO];
+        
+        if (!zoomOut) {
+            self.scrollView.zoomScale = preservedZoomScale;
+        }
         [self checkForCanReset];
     };
     
-    if (animated == NO) {
-        translateBlock();
-        return;
+    if (animated == YES) {
+        [UIView animateWithDuration:0.5f
+                              delay:0.0
+             usingSpringWithDamping:1.0f
+              initialSpringVelocity:0.7f
+                            options:UIViewAnimationOptionBeginFromCurrentState
+                         animations:translateBlock
+                         completion:nil];
     }
-    
-    [UIView animateWithDuration:0.5f
-                          delay:0.0
-         usingSpringWithDamping:1.0f
-          initialSpringVelocity:0.7f
-                        options:UIViewAnimationOptionBeginFromCurrentState
-                     animations:translateBlock
-                     completion:nil];
+    else {
+        translateBlock();
+    }
 }
 
 - (void)rotateImageNinetyDegreesAnimated:(BOOL)animated
