@@ -1407,7 +1407,6 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
     CGRect boundsFrame = self.contentBounds;
     CGRect cropBoxFrame = self.cropBoxFrame;
     CGPoint offset = self.scrollView.contentOffset;
-    CGSize aspectRatio = aspectRatio;
     
     // Passing in an empty size will revert back to the image aspect ratio
     if (aspectRatio.width < FLT_EPSILON && aspectRatio.height < FLT_EPSILON) {
@@ -1423,7 +1422,7 @@ typedef NS_ENUM(NSInteger, TOCropViewOverlayEdge) {
     BOOL zoomOut = NO;
     
     // Added calculated scale to preserve zoom on zooming out instead of using scrollView.minimumZoomScale
-    CGFloat zoomOutScale = [CGFloat zero];
+    CGFloat zoomOutScale = 0.0f;
     
     if (cropBoxIsPortrait) {
         CGFloat newWidth = floorf(cropBoxFrame.size.height * (aspectRatio.width/aspectRatio.height));
